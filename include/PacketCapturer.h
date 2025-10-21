@@ -18,13 +18,15 @@ public:
     PacketCapturer();
     ~PacketCapturer();
 
-    bool initialize(const std::string &interface_name = "");
+    bool initialize(const std::string &interface_name = "", bool promiscuous = true);
     bool setFilter(const std::string &filter);
     void setCallback(PacketCallback callback);
     bool startCapture();
     void stopCapture();
 
     std::string selectInterfaceInteractively();
+    std::string selectFirstActiveInterface();
+    void listInterfacesJSON() const;
     std::string getLastError() const;
 
 private:
