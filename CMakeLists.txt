@@ -59,8 +59,7 @@ include_directories(${PCAP_INCLUDE_DIR})
 include_directories(${CMAKE_SOURCE_DIR}/include)
 
 # Source files
-set(SOURCES
-    src/main.cpp
+set(COMMON_SOURCES
     src/PacketCapturer.cpp
     src/PacketParser.cpp
     src/DatasetWriter.cpp
@@ -74,8 +73,8 @@ set(HEADERS
     include/DatasetWriter.h
 )
 
-# Create executable
-add_executable(${PROJECT_NAME} ${SOURCES} ${HEADERS})
+# Create main executable (supports all modes: interactive, API, legacy, --list-interfaces)
+add_executable(${PROJECT_NAME} src/main.cpp ${COMMON_SOURCES} ${HEADERS})
 
 # Link libraries
 target_link_libraries(${PROJECT_NAME} ${PCAP_LIBRARY})

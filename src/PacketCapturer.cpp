@@ -1,4 +1,4 @@
-#include "PacketCapturer.h"
+﻿#include "PacketCapturer.h"
 #include <iostream>
 #include <cstring>
 #include <vector>
@@ -28,7 +28,7 @@ PacketCapturer::~PacketCapturer()
 #endif
 }
 
-bool PacketCapturer::initialize(const std::string &interface_name)
+bool PacketCapturer::initialize(const std::string &interface_name, bool promiscuous)
 {
     char errbuf[PCAP_ERRBUF_SIZE];
     std::string device_name = interface_name;
@@ -43,7 +43,8 @@ bool PacketCapturer::initialize(const std::string &interface_name)
         }
     }
 
-    pcap_handle_ = pcap_open_live(device_name.c_str(), 65536, 1, 10, errbuf);
+    int promisc_flag = promiscuous ? 1 : 0;
+    pcap_handle_ = pcap_open_live(device_name.c_str(), 65536, promisc_flag, 10, errbuf);
     if (!pcap_handle_)
     {
         last_error_ = std::string("Failed to open device: ") + errbuf;
@@ -71,7 +72,8 @@ bool PacketCapturer::initialize(const std::string &interface_name)
         return false;
     }
 
-    std::cout << "Initialized packet capture on interface: " << device_name << std::endl;
+    std::cout << "Initialized packet capture on interface: " << device_name
+              << " (Promiscuous mode: " << (promiscuous ? "enabled" : "disabled") << ")" << std::endl;
     return true;
 }
 
@@ -324,4 +326,181 @@ std::string PacketCapturer::selectInterfaceInteractively()
 
     pcap_freealldevs(all_devices);
     return selected_interface;
+}
+
+std::string PacketCapturer::selectFirstActiveInterface()
+{
+    pcap_if_t *all_devices;
+    char errbuf[PCAP_ERRBUF_SIZE];
+
+    if (pcap_findalldevs(&all_devices, errbuf) == -1)
+    {
+        last_error_ = std::string("Error finding devices: ") + errbuf;
+        return "";
+    }
+
+    std::string selected_interface;
+
+    // First pass: Look for non-loopback, UP, HAS_ADDRESSES, non-virtual interfaces
+    for (pcap_if_t *device = all_devices; device != nullptr; device = device->next)
+    {
+        bool is_up = device->flags & PCAP_IF_UP;
+        bool has_addresses = device->addresses != nullptr;
+        bool is_loopback = device->flags & PCAP_IF_LOOPBACK;
+        bool is_virtual = false;
+
+        if (device->description)
+        {
+            std::string desc = device->description;
+            is_virtual = (desc.find("VMware") != std::string::npos ||
+                          desc.find("VirtualBox") != std::string::npos ||
+                          desc.find("Hyper-V") != std::string::npos ||
+                          desc.find("Virtual") != std::string::npos);
+        }
+
+        // Prefer physical, active interfaces with IP addresses
+        if (is_up && has_addresses && !is_loopback && !is_virtual)
+        {
+            selected_interface = device->name;
+            break;
+        }
+    }
+
+    // Second pass: If nothing found, accept virtual interfaces
+    if (selected_interface.empty())
+    {
+        for (pcap_if_t *device = all_devices; device != nullptr; device = device->next)
+        {
+            bool is_up = device->flags & PCAP_IF_UP;
+            bool has_addresses = device->addresses != nullptr;
+            bool is_loopback = device->flags & PCAP_IF_LOOPBACK;
+
+            if (is_up && has_addresses && !is_loopback)
+            {
+                selected_interface = device->name;
+                break;
+            }
+        }
+    }
+
+    // Last resort: Take any UP interface
+    if (selected_interface.empty())
+    {
+        for (pcap_if_t *device = all_devices; device != nullptr; device = device->next)
+        {
+            if (device->flags & PCAP_IF_UP)
+            {
+                selected_interface = device->name;
+                break;
+            }
+        }
+    }
+
+    pcap_freealldevs(all_devices);
+    return selected_interface;
+}
+
+void PacketCapturer::listInterfacesJSON() const
+{
+    pcap_if_t *all_devices;
+    char errbuf[PCAP_ERRBUF_SIZE];
+
+    if (pcap_findalldevs(&all_devices, errbuf) == -1)
+    {
+        std::cout << "{\"success\": false, \"error\": \"" << errbuf << "\"}" << std::endl;
+        return;
+    }
+
+    // Helper lambda to escape strings for JSON
+    auto escapeJSON = [](const std::string &str) -> std::string
+    {
+        std::string escaped;
+        for (char c : str)
+        {
+            switch (c)
+            {
+            case '\\':
+                escaped += "\\\\";
+                break;
+            case '\"':
+                escaped += "\\\"";
+                break;
+            case '\b':
+                escaped += "\\b";
+                break;
+            case '\f':
+                escaped += "\\f";
+                break;
+            case '\n':
+                escaped += "\\n";
+                break;
+            case '\r':
+                escaped += "\\r";
+                break;
+            case '\t':
+                escaped += "\\t";
+                break;
+            default:
+                if (c < 32)
+                {
+                    // Escape other control characters
+                    char buf[7];
+                    snprintf(buf, sizeof(buf), "\\u%04x", (unsigned char)c);
+                    escaped += buf;
+                }
+                else
+                {
+                    escaped += c;
+                }
+            }
+        }
+        return escaped;
+    };
+
+    std::cout << "{\"success\": true, \"interfaces\": [" << std::endl;
+
+    bool first = true;
+    for (pcap_if_t *device = all_devices; device != nullptr; device = device->next)
+    {
+        if (device->flags & PCAP_IF_LOOPBACK)
+            continue;
+
+        if (!first)
+            std::cout << "," << std::endl;
+        first = false;
+
+        std::string deviceName = device->name ? device->name : "";
+        std::string desc = device->description ? device->description : deviceName;
+
+        std::cout << "  {" << std::endl;
+        std::cout << "    \"id\": \"" << escapeJSON(deviceName) << "\"," << std::endl;
+        std::cout << "    \"description\": \"" << escapeJSON(desc) << "\"," << std::endl;
+        std::cout << "    \"name\": \"" << escapeJSON(deviceName) << "\"," << std::endl;
+        std::cout << "    \"isUp\": " << ((device->flags & PCAP_IF_UP) ? "true" : "false") << "," << std::endl;
+        std::cout << "    \"hasAddresses\": " << (device->addresses ? "true" : "false") << "," << std::endl;
+        std::cout << "    \"isLoopback\": false," << std::endl;
+        std::cout << "    \"isWireless\": " << ((device->flags & PCAP_IF_WIRELESS) ? "true" : "false") << "," << std::endl;
+        std::cout << "    \"isRunning\": " << ((device->flags & PCAP_IF_RUNNING) ? "true" : "false");
+
+        if (device->addresses)
+        {
+            for (pcap_addr_t *addr = device->addresses; addr != nullptr; addr = addr->next)
+            {
+                if (addr->addr && addr->addr->sa_family == AF_INET)
+                {
+                    struct sockaddr_in *sin = (struct sockaddr_in *)addr->addr;
+                    std::cout << "," << std::endl
+                              << "    \"ipv4\": \"" << inet_ntoa(sin->sin_addr) << "\"";
+                    break;
+                }
+            }
+        }
+
+        std::cout << std::endl
+                  << "  }";
+    }
+
+    std::cout << std::endl
+              << "]}" << std::endl;
+    pcap_freealldevs(all_devices);
 }

@@ -94,7 +94,8 @@ bool DatasetWriter::writePacket(const PacketFeature &packet)
                    << ipv4.header_checksum << ","
                    << escapeCSV(ipv4.src_address) << ","
                    << escapeCSV(ipv4.dst_address) << ","
-                   << escapeCSV(vectorToHex(ipv4.options))
+                   << escapeCSV(vectorToHex(ipv4.options)) << ","
+                   << escapeCSV(ipv4.protocol_name)
                    << std::endl;
         }
         else if (csv_mode_ == CSVMode::IPv6_ONLY && packet.type == PacketFeature::Type::IPv6)
@@ -109,7 +110,8 @@ bool DatasetWriter::writePacket(const PacketFeature &packet)
                    << static_cast<int>(ipv6.hop_limit) << ","
                    << escapeCSV(ipv6.src_address) << ","
                    << escapeCSV(ipv6.dst_address) << ","
-                   << escapeCSV(vectorToString(ipv6.extension_headers))
+                   << escapeCSV(vectorToString(ipv6.extension_headers)) << ","
+                   << escapeCSV(ipv6.protocol_name)
                    << std::endl;
         }
         else if (csv_mode_ == CSVMode::BOTH)
@@ -137,7 +139,8 @@ bool DatasetWriter::writePacket(const PacketFeature &packet)
                        << "," // PayloadLength (IPv6 only)
                        << "," // NextHeader (IPv6 only)
                        << "," // HopLimit (IPv6 only)
-                       << ""  // ExtensionHeaders (IPv6 only)
+                       << "," // ExtensionHeaders (IPv6 only)
+                       << escapeCSV(ipv4.protocol_name)
                        << std::endl;
             }
             else if (packet.type == PacketFeature::Type::IPv6)
@@ -162,7 +165,8 @@ bool DatasetWriter::writePacket(const PacketFeature &packet)
                        << ipv6.payload_length << ","
                        << static_cast<int>(ipv6.next_header) << ","
                        << static_cast<int>(ipv6.hop_limit) << ","
-                       << escapeCSV(vectorToString(ipv6.extension_headers))
+                       << escapeCSV(vectorToString(ipv6.extension_headers)) << ","
+                       << escapeCSV(ipv6.protocol_name)
                        << std::endl;
             }
         }
@@ -210,7 +214,7 @@ void DatasetWriter::writeCSVHeader()
     case CSVMode::BOTH:
         *file_ << "Timestamp,Version,IHL,TOS,TotalLength,Identification,Flags,FragmentOffset,"
                << "TTL,Protocol,HeaderChecksum,SrcIP,DstIP,OptionsHex,TrafficClass,"
-               << "FlowLabel,PayloadLength,NextHeader,HopLimit,ExtensionHeaders" << std::endl;
+               << "FlowLabel,PayloadLength,NextHeader,HopLimit,ExtensionHeaders,ProtocolName" << std::endl;
         break;
     }
 }
@@ -218,13 +222,13 @@ void DatasetWriter::writeCSVHeader()
 void DatasetWriter::writeIPv4CSVHeader()
 {
     *file_ << "Timestamp,Version,IHL,TOS,TotalLength,Identification,Flags,FragmentOffset,"
-           << "TTL,Protocol,HeaderChecksum,SrcIP,DstIP,OptionsHex" << std::endl;
+           << "TTL,Protocol,HeaderChecksum,SrcIP,DstIP,OptionsHex,ProtocolName" << std::endl;
 }
 
 void DatasetWriter::writeIPv6CSVHeader()
 {
     *file_ << "Timestamp,Version,TrafficClass,FlowLabel,PayloadLength,NextHeader,"
-           << "HopLimit,SrcIP,DstIP,ExtensionHeaders" << std::endl;
+           << "HopLimit,SrcIP,DstIP,ExtensionHeaders,ProtocolName" << std::endl;
 }
 
 std::string DatasetWriter::formatTimestamp(const std::chrono::system_clock::time_point &timestamp)
