@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 
 type Interface = {
   id: string;
@@ -13,7 +13,8 @@ type Interface = {
 export default function Home() {
   const [iface, setIface] = useState("");
   const [output, setOutput] = useState("packet_capture.csv");
-  const [filter, setFilter] = useState("both");
+  // Multi-select filter state
+  const [filters, setFilters] = useState<string[]>(["ipv4", "ipv6"]);
   const [duration, setDuration] = useState(10);
   const [promiscuous, setPromiscuous] = useState(true);
   const [status, setStatus] = useState<string | null>(null);
@@ -74,6 +75,9 @@ export default function Home() {
     setCaptureStartTime(Date.now());
     setElapsedTime(0);
 
+    // Compose filter string for backend
+    const filterString = filters.length === 0 ? "both" : filters.join(",");
+
     try {
       const res = await fetch("/api/capture", {
         method: "POST",
@@ -81,7 +85,7 @@ export default function Home() {
         body: JSON.stringify({
           output,
           iface,
-          filter,
+          filter: filterString,
           duration,
           promiscuous: promiscuous ? "on" : "off",
         }),
@@ -126,166 +130,193 @@ export default function Home() {
   }
 
   return (
-    <main style={{ padding: 24 }}>
-      <h1>Network Dataset Generator</h1>
+    <div className="container">
+      <main className="main">
+        <h1 className="title">Network Dataset Generator</h1>
 
-      <div
-        style={{
-          background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-          padding: "20px",
-          borderRadius: "10px",
-          marginBottom: "20px",
-          color: "white",
-          boxShadow: "0 4px 6px rgba(0,0,0,0.1)",
-        }}
-      >
-        <h3 style={{ margin: "0 0 10px 0" }}>⚠️ Important Requirements</h3>
-        <ul style={{ margin: 0, paddingLeft: "20px" }}>
-          <li>
-            Run VS Code or your terminal <strong>as Administrator</strong>{" "}
-            (required for packet capture)
-          </li>
-          <li>
-            Generate network traffic during capture (browse web, ping
-            google.com, download files)
-          </li>
-          <li>
-            Ensure Npcap service is running: <code>sc query npcap</code>
-          </li>
-        </ul>
-      </div>
+        <section className="card" aria-labelledby="requirements">
+          <h3 id="requirements">⚠️ Important Requirements</h3>
+          <ul>
+            <li>
+              Run VS Code or your terminal <strong>as Administrator</strong>
+              (required for packet capture)
+            </li>
+            <li>Generate network traffic during capture (browse, ping, download)</li>
+            <li>
+              Ensure Npcap service is running: <code>sc query npcap</code>
+            </li>
+          </ul>
+        </section>
 
-      <form onSubmit={startCapture}>
-        <div>
-          <label>Output filename: </label>
-          <input value={output} onChange={(e) => setOutput(e.target.value)} />
-        </div>
-        <div>
-          <label>Interface: </label>
-          {loadingInterfaces ? (
-            <span>⏳ Loading interfaces...</span>
-          ) : (
-            <>
-              <select
-                value={iface}
-                onChange={(e) => setIface(e.target.value)}
-                style={{ minWidth: "400px" }}
-              >
-                <option value="">🔄 Auto-select (recommended)</option>
-                {interfaces.map((int) => (
-                  <option key={int.id} value={int.id}>
-                    {int.description}
-                    {int.isUp && int.hasAddresses
-                      ? " ✓ [Recommended]"
-                      : int.isUp
-                      ? " ✓"
-                      : " ⚠ (DOWN)"}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                onClick={fetchInterfaces}
-                style={{
-                  marginLeft: "10px",
-                  padding: "5px 10px",
-                  fontSize: "12px",
-                }}
-                disabled={loadingInterfaces}
-              >
-                🔄 Refresh
-              </button>
-            </>
-          )}
-          <br />
-          <small style={{ color: "#666", fontSize: "12px" }}>
-            💡 Tip: Choose your active network adapter (WiFi or Ethernet with ✓
-            [Recommended]). Auto-select picks the first active interface.
-          </small>
-        </div>
-        <div>
-          <label>Filter: </label>
-          <select value={filter} onChange={(e) => setFilter(e.target.value)}>
-            <option value="both">Both (IPv4 + IPv6)</option>
-            <option value="ipv4">IPv4 only</option>
-            <option value="ipv6">IPv6 only</option>
-            <option value="icmp">ICMP only</option>
-            <option value="bgp">BGP only (TCP port 179)</option>
-          </select>
-        </div>
-        <div>
-          <label>Duration (seconds, 0 = until stopped): </label>
-          <input
-            type="number"
-            value={duration}
-            onChange={(e) => handleDurationChange(Number(e.target.value))}
-          />
-        </div>
-        <div>
-          <label>
+        <form onSubmit={startCapture} className="form" aria-label="capture form">
+          {/* Move output filename to the very top */}
+          <div className="form-group">
+            <label className="label">Output filename</label>
             <input
-              type="checkbox"
-              checked={promiscuous}
-              onChange={(e) => setPromiscuous(e.target.checked)}
-              style={{ marginRight: "8px" }}
+              className="input"
+              value={output}
+              onChange={(e) => setOutput(e.target.value)}
+              disabled={isLoading}
+              aria-label="output filename"
             />
-            Promiscuous Mode
-          </label>
-          <br />
-          <small
-            style={{ color: "#666", fontSize: "12px", marginLeft: "24px" }}
-          >
-            📡 When enabled, captures ALL packets on the network (not just those
-            destined for this machine). Useful for network monitoring but may
-            capture more data.
-          </small>
-        </div>
-        <div style={{ marginTop: 12 }}>
-          <button type="submit" disabled={isLoading}>
-            {isLoading ? "⏳ Capturing..." : "🚀 Start Capture"}
-          </button>
-          {isLoading && (
-            <div
-              style={{
-                marginTop: "10px",
-                padding: "10px",
-                backgroundColor: "#f0f0f0",
-                borderRadius: "5px",
-              }}
-            >
-              <p style={{ margin: "5px 0" }}>
-                ⏱️ Elapsed: {elapsedTime}s{duration > 0 && ` / ${duration}s`}
-              </p>
-              <p style={{ margin: "5px 0", fontSize: "13px", color: "#666" }}>
-                💡 Capture is running in the background. The page will update
-                when complete.
-              </p>
-              {isUnlimited && (
-                <button type="button" onClick={stopCapture}>
-                  🛑 Stop Capture
+          </div>
+
+          {/* Interface selection stays the same */}
+          <div className="form-group">
+            <label className="label">Interface</label>
+            {loadingInterfaces ? (
+              <div>
+                <span className="spinner" aria-hidden /> Loading interfaces...
+              </div>
+            ) : (
+              <div className="row">
+                <select
+                  className="select"
+                  value={iface}
+                  onChange={(e) => setIface(e.target.value)}
+                  disabled={isLoading}
+                  aria-label="network interface"
+                >
+                  <option value="">Auto-select (recommended)</option>
+                  {interfaces.map((int) => (
+                    <option key={int.id} value={int.id}>
+                      {int.description}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={fetchInterfaces}
+                  className="button refresh-btn"
+                  disabled={loadingInterfaces || isLoading}
+                  aria-label="refresh interfaces"
+                >
+                  🔄
                 </button>
+              </div>
+            )}
+            <div>
+              <small className="subtitle">
+                Tip: choose an active adapter (WiFi/Ethernet). Auto-select picks the first active one.
+              </small>
+            </div>
+          </div>
+
+          {/* Neon toggle buttons for filter selection */}
+          <div className="form-group">
+            <label className="label">Packet Types</label>
+            <div className="row" style={{ gap: 12 }}>
+              {[
+                { key: "ipv4", label: "IPv4" },
+                { key: "ipv6", label: "IPv6" },
+                { key: "icmp", label: "ICMP" },
+                { key: "bgp", label: "BGP" },
+              ].map((opt) => (
+                <button
+                  type="button"
+                  key={opt.key}
+                  className={`neon-toggle${filters.includes(opt.key) ? " selected" : ""}`}
+                  style={{ minWidth: 70 }}
+                  onClick={() => {
+                    setFilters((prev) =>
+                      prev.includes(opt.key)
+                        ? prev.filter((f) => f !== opt.key)
+                        : [...prev, opt.key]
+                    );
+                  }}
+                  disabled={isLoading}
+                  aria-pressed={filters.includes(opt.key)}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            <small className="subtitle">Select one or more packet types to capture. Default: IPv4 & IPv6.</small>
+          </div>
+
+          <div className="form-group">
+            <label className="label">Duration (seconds, 0 = until stopped)</label>
+            <input
+              className="input"
+              type="number"
+              min={0}
+              value={duration}
+              onChange={(e) => handleDurationChange(Number(e.target.value))}
+              disabled={isLoading}
+            />
+          </div>
+
+          <div className="form-group">
+            <label className="label">
+              <input
+                type="checkbox"
+                checked={promiscuous}
+                onChange={(e) => setPromiscuous(e.target.checked)}
+                disabled={isLoading}
+                style={{ marginRight: 8 }}
+              />
+              Promiscuous Mode
+            </label>
+            <small className="subtitle">
+              When enabled, captures ALL packets on the network (not just those destined for this machine).
+            </small>
+          </div>
+
+          <div className="form-group">
+            <button type="submit" className="button" disabled={isLoading}>
+              {isLoading ? (
+                <>
+                  <span className="spinner" aria-hidden /> Capturing...
+                </>
+              ) : (
+                "🚀 Start Capture"
               )}
+            </button>
+          </div>
+
+          {isLoading && (
+            <div className="card status status-pending">
+              <div className="row" style={{ alignItems: "center" }}>
+                <div style={{ flex: 1 }}>
+                  <p style={{ margin: 0 }}>
+                    ⏱️ Elapsed: {elapsedTime}s{duration > 0 && ` / ${duration}s`}
+                  </p>
+                  <div className="progress" aria-hidden>
+                    <div
+                      className="progress-bar"
+                      style={{
+                        width: duration > 0 ? `${Math.min(100, (elapsedTime / duration) * 100)}%` : "100%",
+                      }}
+                    />
+                  </div>
+                </div>
+                <div style={{ marginLeft: 12 }}>
+                  {isUnlimited && (
+                    <button type="button" className="button" onClick={stopCapture}>
+                      🛑 Stop
+                    </button>
+                  )}
+                </div>
+              </div>
             </div>
           )}
-        </div>
-      </form>
+        </form>
 
-      {status && (
-        <div style={{ marginTop: "30px", textAlign: "center" }}>
-          <p style={{ fontSize: "18px", marginBottom: "15px" }}>{status}</p>
-          {downloadUrl && (
-            <a
-              href={downloadUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="button"
-              style={{ display: "inline-block", textDecoration: "none" }}
-            >
-              📥 Download CSV File
-            </a>
-          )}
-        </div>
-      )}
-    </main>
+        {status && (
+          <div style={{ marginTop: 20 }}>
+            <div className={`status ${status.startsWith("✅") ? "status-success" : status.startsWith("❌") ? "status-error" : "status-pending"}`}>
+              <p style={{ margin: 0, fontSize: 16 }}>{status}</p>
+              {downloadUrl && (
+                <div style={{ marginTop: 12 }}>
+                  <a href={downloadUrl} target="_blank" rel="noopener noreferrer" className="button" style={{ display: "inline-block", textDecoration: "none" }}>
+                    📥 Download CSV File
+                  </a>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </main>
+    </div>
   );
 }
