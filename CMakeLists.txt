@@ -4,6 +4,10 @@ project(NetworkPacketAnalyzer)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Enable CTest
+include(CTest)
+enable_testing()
+
 # Find Npcap/WinPcap
 if(WIN32)
     find_path(PCAP_INCLUDE_DIR pcap.h
@@ -89,3 +93,28 @@ if(WIN32)
     target_compile_definitions(${PROJECT_NAME} PRIVATE WPCAP)
     target_compile_definitions(${PROJECT_NAME} PRIVATE HAVE_REMOTE)
 endif()
+
+# ----------------------------------------------------------------------------
+# Tests (Catch2 single-header is vendored at src/catch_amalgamated.hpp)
+# ----------------------------------------------------------------------------
+
+set(TEST_SOURCES
+    src/catch_amalgamated.cpp
+    tests/test_PacketParser.cpp
+    tests/test_DatasetWriter.cpp
+)
+
+add_executable(network_tests
+    ${TEST_SOURCES}
+    src/PacketParser.cpp
+    src/DatasetWriter.cpp
+    ${HEADERS}
+)
+
+target_include_directories(network_tests PRIVATE ${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/src)
+
+if(WIN32)
+    target_link_libraries(network_tests ws2_32)
+endif()
+
+add_test(NAME network_tests COMMAND network_tests)
