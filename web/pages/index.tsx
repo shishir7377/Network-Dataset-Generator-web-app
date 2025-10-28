@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 type Interface = {
   id: string;
@@ -9,12 +9,14 @@ type Interface = {
   hasAddresses: boolean;
   isLoopback: boolean;
 };
+const MAROON = '#66152b';
+const MAROON_DARK = '#4b0f1f';
+const CREAM = '#FFF7E6';
 
 export default function Home() {
   const [iface, setIface] = useState("");
   const [output, setOutput] = useState("packet_capture.csv");
-  // Multi-select filter state
-  const [filters, setFilters] = useState<string[]>(["ipv4", "ipv6"]);
+  const [filter, setFilter] = useState("both");
   const [duration, setDuration] = useState(10);
   const [promiscuous, setPromiscuous] = useState(true);
   const [status, setStatus] = useState<string | null>(null);
@@ -26,7 +28,6 @@ export default function Home() {
   const [captureStartTime, setCaptureStartTime] = useState<number | null>(null);
   const [elapsedTime, setElapsedTime] = useState(0);
 
-  // Fetch available interfaces on component mount
   useEffect(() => {
     fetchInterfaces();
   }, []);
@@ -44,17 +45,16 @@ export default function Home() {
         console.log("[Frontend] Loaded interfaces:", data.interfaces);
       } else {
         console.error("[Frontend] Failed to load interfaces:", data.message);
-        setInterfaces([]); // Set empty array on failure
+  setInterfaces([]);
       }
     } catch (err) {
       console.error("[Frontend] Error fetching interfaces:", err);
-      setInterfaces([]); // Set empty array on error
+  setInterfaces([]);
     } finally {
       setLoadingInterfaces(false);
     }
   }
 
-  // Timer effect for elapsed time display
   useEffect(() => {
     let interval: NodeJS.Timeout | null = null;
     if (isLoading && captureStartTime) {
@@ -75,9 +75,6 @@ export default function Home() {
     setCaptureStartTime(Date.now());
     setElapsedTime(0);
 
-    // Compose filter string for backend
-    const filterString = filters.length === 0 ? "both" : filters.join(",");
-
     try {
       const res = await fetch("/api/capture", {
         method: "POST",
@@ -85,24 +82,26 @@ export default function Home() {
         body: JSON.stringify({
           output,
           iface,
-          filter: filterString,
+          filter,
           duration,
           promiscuous: promiscuous ? "on" : "off",
         }),
       });
       const data = await res.json();
       if (data.success) {
-        setStatus("✅ Capture complete!");
+        setStatus("Capture complete!");
         setDownloadUrl(data.message);
       } else {
-        setStatus("❌ Error: " + data.message);
+        setStatus("Error: " + data.message);
       }
     } catch (err: any) {
-      setStatus("❌ Request failed: " + String(err));
+      setStatus("Request failed: " + String(err));
     } finally {
       setIsLoading(false);
       setCaptureStartTime(null);
     }
+
+    
   }
 
   function handleDurationChange(value: number) {
@@ -120,203 +119,454 @@ export default function Home() {
       });
       const data = await res.json();
       if (data.success) {
-        setStatus("🛑 Capture stopped. Waiting for file...");
+        setStatus("Capture stopped. Waiting for file...");
       } else {
-        setStatus("⚠️ " + data.message);
+        setStatus("Warning: " + data.message);
       }
     } catch (err: any) {
-      setStatus("❌ Stop failed: " + String(err));
+      setStatus("Stop failed: " + String(err));
     }
   }
 
   return (
-    <div className="container">
-      <main className="main">
-        <h1 className="title">Network Dataset Generator</h1>
+    <main style={{ 
+      padding: 24,
+  backgroundColor: '#FFF7E6',
+      color: MAROON,
+      minHeight: '100vh',
+      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+    }}>
+      <div style={{
+  maxWidth: '720px',
+        margin: '40px auto',
+        background: 'linear-gradient(to bottom, #ffffff, #fff9f2)',
+        padding: '36px',
+        borderRadius: '12px',
+        border: '1px solid rgba(106,28,55,0.06)',
+        boxShadow: '0 10px 30px rgba(106,28,55,0.06)'
+      }}>
+        <h1 style={{ 
+          color: MAROON_DARK,
+          marginTop: 0,
+          marginBottom: '20px',
+          fontSize: '30px',
+          textAlign: 'center'
+        }}>Network Dataset Generator</h1>
 
-        <section className="card" aria-labelledby="requirements">
-          <h3 id="requirements">⚠️ Important Requirements</h3>
-          <ul>
-            <li>
-              Run VS Code or your terminal <strong>as Administrator</strong>
-              (required for packet capture)
-            </li>
-            <li>Generate network traffic during capture (browse, ping, download)</li>
-            <li>
-              Ensure Npcap service is running: <code>sc query npcap</code>
-            </li>
-          </ul>
-        </section>
-
-        <form onSubmit={startCapture} className="form" aria-label="capture form">
-          {/* Move output filename to the very top */}
-          <div className="form-group">
-            <label className="label">Output filename</label>
-            <input
-              className="input"
-              value={output}
-              onChange={(e) => setOutput(e.target.value)}
-              disabled={isLoading}
-              aria-label="output filename"
-            />
-          </div>
-
-          {/* Interface selection stays the same */}
-          <div className="form-group">
-            <label className="label">Interface</label>
-            {loadingInterfaces ? (
-              <div>
-                <span className="spinner" aria-hidden /> Loading interfaces...
-              </div>
-            ) : (
-              <div className="row">
-                <select
-                  className="select"
-                  value={iface}
-                  onChange={(e) => setIface(e.target.value)}
-                  disabled={isLoading}
-                  aria-label="network interface"
-                >
-                  <option value="">Auto-select (recommended)</option>
-                  {interfaces.map((int) => (
-                    <option key={int.id} value={int.id}>
-                      {int.description}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  onClick={fetchInterfaces}
-                  className="button refresh-btn"
-                  disabled={loadingInterfaces || isLoading}
-                  aria-label="refresh interfaces"
-                >
-                  🔄
-                </button>
-              </div>
-            )}
-            <div>
-              <small className="subtitle">
-                Tip: choose an active adapter (WiFi/Ethernet). Auto-select picks the first active one.
-              </small>
+      <form onSubmit={startCapture}>
+        <div style={{ marginBottom: '30px' }}>
+          <label style={{ 
+            display: 'block', 
+            marginBottom: '10px',
+            color: MAROON,
+            fontSize: '16px'
+          }}>Output filename: </label>
+          <input 
+            value={output} 
+            onChange={(e) => setOutput(e.target.value)}
+            style={{
+              width: '100%',
+              padding: '12px',
+              fontSize: '16px',
+              borderRadius: '8px',
+              border: '1px solid #e0e0e0',
+              backgroundColor: 'white',
+              color: MAROON
+            }}
+          />
+        </div>
+        <div>
+          <label style={{ 
+            display: 'block', 
+            marginBottom: '10px',
+            color: MAROON,
+            fontSize: '16px'
+          }}>Select Network Interface: </label>
+          {loadingInterfaces ? (
+            <div style={{ padding: '20px', textAlign: 'center' }}>
+              <span>Loading interfaces...</span>
             </div>
-          </div>
-
-          {/* Neon toggle buttons for filter selection */}
-          <div className="form-group">
-            <label className="label">Packet Types</label>
-            <div className="row" style={{ gap: 12 }}>
-              {[
-                { key: "ipv4", label: "IPv4" },
-                { key: "ipv6", label: "IPv6" },
-                { key: "icmp", label: "ICMP" },
-                { key: "bgp", label: "BGP" },
-              ].map((opt) => (
-                <button
-                  type="button"
-                  key={opt.key}
-                  className={`neon-toggle${filters.includes(opt.key) ? " selected" : ""}`}
-                  style={{ minWidth: 70 }}
-                  onClick={() => {
-                    setFilters((prev) =>
-                      prev.includes(opt.key)
-                        ? prev.filter((f) => f !== opt.key)
-                        : [...prev, opt.key]
-                    );
-                  }}
-                  disabled={isLoading}
-                  aria-pressed={filters.includes(opt.key)}
-                >
-                  {opt.label}
-                </button>
-              ))}
+          ) : (
+            <div style={{ marginBottom: '20px' }}>
+              <select
+                value={iface}
+                onChange={(e) => setIface(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '12px',
+                  fontSize: '16px',
+                  borderRadius: '8px',
+                  border: '1px solid #e0e0e0',
+                  backgroundColor: 'white',
+                  color: MAROON,
+                  marginBottom: '10px'
+                }}
+              >
+                <option value="">Auto-select (recommended)</option>
+                {interfaces.map((int) => (
+                  <option key={int.id} value={int.id}>
+                    {int.description}
+                    {int.isUp && int.hasAddresses
+                      ? " [Recommended]"
+                      : int.isUp
+                      ? ""
+                      : " (DOWN)"}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={fetchInterfaces}
+                style={{
+                  padding: '8px 16px',
+                  fontSize: '14px',
+                  border: 'none',
+                  borderRadius: '6px',
+              backgroundColor: '#fff1f6',
+              color: MAROON,
+                  cursor: 'pointer',
+                  transition: 'background-color 0.2s'
+                }}
+                disabled={loadingInterfaces}
+              >
+                Refresh Interfaces
+              </button>
             </div>
-            <small className="subtitle">Select one or more packet types to capture. Default: IPv4 & IPv6.</small>
-          </div>
-
-          <div className="form-group">
-            <label className="label">Duration (seconds, 0 = until stopped)</label>
-            <input
-              className="input"
-              type="number"
-              min={0}
-              value={duration}
-              onChange={(e) => handleDurationChange(Number(e.target.value))}
-              disabled={isLoading}
-            />
-          </div>
-
-          <div className="form-group">
-            <label className="label">
-              <input
-                type="checkbox"
-                checked={promiscuous}
-                onChange={(e) => setPromiscuous(e.target.checked)}
-                disabled={isLoading}
-                style={{ marginRight: 8 }}
-              />
-              Promiscuous Mode
-            </label>
-            <small className="subtitle">
-              When enabled, captures ALL packets on the network (not just those destined for this machine).
-            </small>
-          </div>
-
-          <div className="form-group">
-            <button type="submit" className="button" disabled={isLoading}>
-              {isLoading ? (
-                <>
-                  <span className="spinner" aria-hidden /> Capturing...
-                </>
-              ) : (
-                "🚀 Start Capture"
-              )}
+          )}
+        </div>
+        <div style={{ marginBottom: '30px' }}>
+          <label style={{ 
+            display: 'block', 
+            marginBottom: '15px',
+            color: '#2c3e50',
+            fontSize: '16px'
+          }}>Filter Type: </label>
+          <div style={{ 
+            display: 'flex', 
+            gap: '15px', 
+            flexWrap: 'wrap'
+          }}>
+            <button
+              type="button"
+              onClick={() => setFilter('both')}
+              style={{
+                padding: '14px 24px',
+                background: filter === 'both' ? 'linear-gradient(to bottom, #7a1b36, #66152b)' : 'white',
+                color: filter === 'both' ? CREAM : MAROON,
+                border: `1px solid ${filter === 'both' ? '#4b0f1f' : '#e0e0e0'}`,
+                borderRadius: '10px',
+                cursor: 'pointer',
+                fontSize: '16px',
+                fontWeight: filter === 'both' ? '600' : 'normal',
+                transition: 'all 0.18s ease',
+                boxShadow: filter === 'both' ? '0 8px 20px rgba(74, 18, 38, 0.16)' : 'none'
+              }}
+            >
+              IPv4 + IPv6
+            </button>
+            <button
+              type="button"
+              onClick={() => setFilter('ipv4')}
+              style={{
+                padding: '14px 24px',
+                background: filter === 'ipv4' ? 'linear-gradient(to bottom, #7a1b36, #66152b)' : 'white',
+                color: filter === 'ipv4' ? CREAM : MAROON,
+                border: `1px solid ${filter === 'ipv4' ? '#4b0f1f' : '#e0e0e0'}`,
+                borderRadius: '10px',
+                cursor: 'pointer',
+                fontSize: '16px',
+                fontWeight: filter === 'ipv4' ? '600' : 'normal',
+                transition: 'all 0.18s ease',
+                boxShadow: filter === 'ipv4' ? '0 8px 20px rgba(90, 34, 66, 0.14)' : 'none'
+              }}
+            >
+              IPv4 Only
+            </button>
+            <button
+              type="button"
+              onClick={() => setFilter('ipv6')}
+              style={{
+                padding: '14px 24px',
+                background: filter === 'ipv6' ? 'linear-gradient(to bottom, #7a1b36, #66152b)' : 'white',
+                color: filter === 'ipv6' ? CREAM : MAROON,
+                border: `1px solid ${filter === 'ipv6' ? '#4b0f1f' : '#e0e0e0'}`,
+                borderRadius: '10px',
+                cursor: 'pointer',
+                fontSize: '16px',
+                fontWeight: filter === 'ipv6' ? '600' : 'normal',
+                transition: 'all 0.18s ease',
+                boxShadow: filter === 'ipv6' ? '0 8px 20px rgba(90, 34, 66, 0.14)' : 'none'
+              }}
+            >
+              IPv6 Only
+            </button>
+            <button
+              type="button"
+              onClick={() => setFilter('icmp')}
+              style={{
+                padding: '14px 24px',
+                background: filter === 'icmp' ? 'linear-gradient(to bottom, #7a1b36, #66152b)' : 'white',
+                color: filter === 'icmp' ? CREAM : MAROON,
+                border: `1px solid ${filter === 'icmp' ? '#4b0f1f' : '#e0e0e0'}`,
+                borderRadius: '10px',
+                cursor: 'pointer',
+                fontSize: '16px',
+                fontWeight: filter === 'icmp' ? '600' : 'normal',
+                transition: 'all 0.18s ease',
+                boxShadow: filter === 'icmp' ? '0 8px 20px rgba(90, 34, 66, 0.14)' : 'none'
+              }}
+            >
+              ICMP Only
+            </button>
+            <button
+              type="button"
+              onClick={() => setFilter('bgp')}
+              style={{
+                padding: '14px 24px',
+                background: filter === 'bgp' ? 'linear-gradient(to bottom, #7a1b36, #66152b)' : 'white',
+                color: filter === 'bgp' ? CREAM : MAROON,
+                border: `1px solid ${filter === 'bgp' ? '#4b0f1f' : '#e0e0e0'}`,
+                borderRadius: '10px',
+                cursor: 'pointer',
+                fontSize: '16px',
+                fontWeight: filter === 'bgp' ? '600' : 'normal',
+                transition: 'all 0.18s ease',
+                boxShadow: filter === 'bgp' ? '0 8px 20px rgba(90, 34, 66, 0.14)' : 'none'
+              }}
+            >
+              BGP Only
             </button>
           </div>
+        </div>
+        <div style={{ marginBottom: '30px' }}>
+          <label style={{ 
+            display: 'block', 
+            marginBottom: '15px',
+            color: MAROON,
+            fontSize: '16px'
+          }}>Capture Duration:</label>
+          <div style={{ display: 'flex', gap: '15px', alignItems: 'center', flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              onClick={() => handleDurationChange(0)}
+              style={{
+                padding: '12px 24px',
+                background: duration === 0 ? 'linear-gradient(to bottom, #7a1b36, #66152b)' : 'white',
+                color: duration === 0 ? CREAM : MAROON,
+                border: `1px solid ${duration === 0 ? '#4b0f1f' : '#e0e0e0'}`,
+                borderRadius: '10px',
+                cursor: 'pointer',
+                fontSize: '15px',
+                fontWeight: duration === 0 ? '600' : 'normal',
+                transition: 'all 0.18s ease',
+                boxShadow: duration === 0 ? '0 8px 20px rgba(90, 34, 66, 0.14)' : 'none'
+              }}
+            >
+              Unlimited
+            </button>
+            <button
+              type="button"
+              onClick={() => handleDurationChange(30)}
+              style={{
+                padding: '12px 24px',
+                background: duration === 30 ? 'linear-gradient(to bottom, #7a1b36, #66152b)' : 'white',
+                color: duration === 30 ? CREAM : MAROON,
+                border: `1px solid ${duration === 30 ? '#4b0f1f' : '#e0e0e0'}`,
+                borderRadius: '10px',
+                cursor: 'pointer',
+                fontSize: '15px',
+                fontWeight: duration === 30 ? '600' : 'normal',
+                transition: 'all 0.18s ease',
+                boxShadow: duration === 30 ? '0 8px 20px rgba(90, 34, 66, 0.14)' : 'none'
+              }}
+            >
+              30s
+            </button>
+            <button
+              type="button"
+              onClick={() => handleDurationChange(60)}
+              style={{
+                padding: '12px 24px',
+                background: duration === 60 ? 'linear-gradient(to bottom, #7a1b36, #66152b)' : 'white',
+                color: duration === 60 ? CREAM : MAROON,
+                border: `1px solid ${duration === 60 ? '#4b0f1f' : '#e0e0e0'}`,
+                borderRadius: '10px',
+                cursor: 'pointer',
+                fontSize: '15px',
+                fontWeight: duration === 60 ? '600' : 'normal',
+                transition: 'all 0.18s ease',
+                boxShadow: duration === 60 ? '0 8px 20px rgba(90, 34, 66, 0.14)' : 'none'
+              }}
+            >
+              1m
+            </button>
+            <button
+              type="button"
+              onClick={() => handleDurationChange(300)}
+              style={{
+                padding: '12px 24px',
+                background: duration === 300 ? 'linear-gradient(to bottom, #7a1b36, #66152b)' : 'white',
+                color: duration === 300 ? CREAM : MAROON,
+                border: `1px solid ${duration === 300 ? '#4b0f1f' : '#e0e0e0'}`,
+                borderRadius: '10px',
+                cursor: 'pointer',
+                fontSize: '15px',
+                fontWeight: duration === 300 ? '600' : 'normal',
+                transition: 'all 0.18s ease',
+                boxShadow: duration === 300 ? '0 8px 20px rgba(90, 34, 66, 0.14)' : 'none'
+              }}
+            >
+              5m
+            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <input
+                type="number"
+                value={duration}
+                onChange={(e) => handleDurationChange(Number(e.target.value))}
+                style={{
+                  padding: '12px',
+                  width: '100px',
+                  borderRadius: '8px',
+                  border: '1px solid #e0e0e0',
+                  fontSize: '15px',
+                  color: MAROON
+                }}
+                placeholder="Custom"
+              />
+              <span style={{ color: '#666', fontSize: '14px' }}>seconds</span>
+            </div>
+          </div>
+        </div>
 
+        <div style={{ 
+          marginBottom: '30px', 
+          padding: '20px', 
+          backgroundColor: 'white', 
+          borderRadius: '10px',
+          border: '1px solid #e0e0e0',
+          boxShadow: '0 2px 4px rgba(0,0,0,0.05)'
+        }}>
+          <label style={{ display: 'flex', alignItems: 'center', marginBottom: '12px' }}>
+            <input
+              type="checkbox"
+              checked={promiscuous}
+              onChange={(e) => setPromiscuous(e.target.checked)}
+              style={{ 
+                marginRight: "12px", 
+                width: '20px', 
+                height: '20px',
+                cursor: 'pointer'
+              }}
+            />
+            <span style={{ 
+              fontSize: '16px',
+              color: MAROON,
+              fontWeight: '500'
+            }}>Promiscuous Mode</span>
+          </label>
+          <p style={{ 
+            margin: '0', 
+            color: MAROON, 
+            fontSize: '14px',
+            lineHeight: '1.5'
+          }}>
+            When enabled, captures ALL packets on the network. Useful for comprehensive network monitoring.
+          </p>
+        </div>
+
+        <div style={{ marginTop: '20px', display: 'flex', gap: '12px', alignItems: 'center' }}>
+          <button 
+            type="submit" 
+            disabled={isLoading}
+            style={{
+              padding: '12px 28px',
+              fontSize: '16px',
+              background: isLoading ? '#e9dfe3' : 'linear-gradient(to bottom, #7a1b36, #66152b)',
+              color: isLoading ? MAROON : CREAM,
+              border: 'none',
+              borderRadius: '10px',
+              cursor: isLoading ? 'not-allowed' : 'pointer',
+              boxShadow: isLoading ? 'none' : '0 10px 26px rgba(106,28,55,0.14)'
+            }}
+          >
+              {isLoading ? "Capturing..." : "Start Capture"}
+          </button>
+          
           {isLoading && (
-            <div className="card status status-pending">
-              <div className="row" style={{ alignItems: "center" }}>
-                <div style={{ flex: 1 }}>
-                  <p style={{ margin: 0 }}>
-                    ⏱️ Elapsed: {elapsedTime}s{duration > 0 && ` / ${duration}s`}
+            <div style={{ flex: 1 }}>
+                <div style={{
+                padding: '15px',
+                backgroundColor: '#fff9ed',
+                borderRadius: '8px',
+                border: '1px solid #fff6ee'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <p style={{ margin: '0', fontSize: '16px' }}>
+                    Elapsed: {elapsedTime}s{duration > 0 && ` / ${duration}s`}
                   </p>
-                  <div className="progress" aria-hidden>
-                    <div
-                      className="progress-bar"
-                      style={{
-                        width: duration > 0 ? `${Math.min(100, (elapsedTime / duration) * 100)}%` : "100%",
-                      }}
-                    />
-                  </div>
-                </div>
-                <div style={{ marginLeft: 12 }}>
                   {isUnlimited && (
-                    <button type="button" className="button" onClick={stopCapture}>
-                      🛑 Stop
+                    <button 
+                      type="button" 
+                      onClick={stopCapture}
+                      style={{
+                        padding: '8px 16px',
+                        backgroundColor: '#ff4444',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '5px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Stop Capture
                     </button>
                   )}
                 </div>
+                <p style={{ margin: '5px 0 0 0', fontSize: '13px', color: MAROON }}>
+                  Capture is running in the background. The page will update when complete.
+                </p>
               </div>
             </div>
           )}
-        </form>
+        </div>
+      </form>
 
-        {status && (
-          <div style={{ marginTop: 20 }}>
-            <div className={`status ${status.startsWith("✅") ? "status-success" : status.startsWith("❌") ? "status-error" : "status-pending"}`}>
-              <p style={{ margin: 0, fontSize: 16 }}>{status}</p>
-              {downloadUrl && (
-                <div style={{ marginTop: 12 }}>
-                  <a href={downloadUrl} target="_blank" rel="noopener noreferrer" className="button" style={{ display: "inline-block", textDecoration: "none" }}>
-                    📥 Download CSV File
-                  </a>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-      </main>
-    </div>
+      {status && (
+        <div style={{ 
+          marginTop: "30px", 
+          textAlign: "center",
+          padding: "20px",
+          backgroundColor: "white",
+          borderRadius: "10px",
+          border: "1px solid #e0e0e0",
+          boxShadow: "0 2px 4px rgba(0,0,0,0.05)"
+        }}>
+          <p style={{ 
+            fontSize: "18px", 
+            marginBottom: "15px",
+            color: MAROON
+          }}>{status}</p>
+          {downloadUrl && (
+            <a
+              href={downloadUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+                style={{ 
+                display: "inline-block", 
+                textDecoration: "none",
+                padding: "12px 24px",
+                backgroundColor: "#D4AF37",
+                color: MAROON,
+                borderRadius: "8px",
+                transition: "background-color 0.12s ease",
+                boxShadow: "0 8px 22px rgba(212,175,55,0.12)"
+              }}
+            >
+              Download CSV File
+            </a>
+          )}
+        </div>
+      )}
+      </div>
+    </main>
   );
 }
