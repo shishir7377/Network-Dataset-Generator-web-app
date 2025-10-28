@@ -38,13 +38,15 @@ export default async function handler(
     output = "packet_capture.csv",
     iface = "",
     filter = "both",
+    filters,
     duration = 10,
-    promiscuous = "on", // New parameter: 'on' or 'off'
+    promiscuous = "on",
   } = req.body;
   console.log("[API] Parsed params:", {
     output,
     iface,
     filter,
+    filters,
     duration,
     promiscuous,
   });
@@ -81,7 +83,6 @@ export default async function handler(
   // Ensure public directory exists
   const publicDir = path.join(process.cwd(), "public");
   if (!fs.existsSync(publicDir)) {
-    console.log("[API] Creating public directory:", publicDir);
     fs.mkdirSync(publicDir, { recursive: true });
   }
 
@@ -111,11 +112,34 @@ export default async function handler(
   const promiscuousMode = promiscuous === "off" ? "off" : "on";
 
   try {
+    function buildFilterArg(): string {
+      if (Array.isArray(filters)) {
+        if (filters.length === 0) {
+          throw new Error("Select at least one packet type.");
+        }
+        const norm = Array.from(
+          new Set((filters as string[]).map((s) => String(s).toLowerCase()))
+        );
+        const parts: string[] = [];
+        if (norm.includes("ipv4")) parts.push("ip");
+        if (norm.includes("ipv6")) parts.push("ip6");
+        if (norm.includes("icmp")) parts.push("(icmp or icmp6)");
+        if (norm.includes("bgp")) parts.push("tcp port 179");
+        if (parts.length === 0) {
+          throw new Error("Select at least one packet type.");
+        }
+        if (parts.length === 1) return parts[0];
+        return parts.map((p) => `(${p})`).join(" or ");
+      }
+      return filter || "both";
+    }
+
+    const filterArg = buildFilterArg();
     // Use API argument format: <output> <interface> <filter> <duration> <promiscuous>
     const args = [
       outPath,
       interfaceArg,
-      filter || "both",
+      filterArg,
       String(duration),
       promiscuousMode,
       stopFilePath,
@@ -125,7 +149,10 @@ export default async function handler(
     // Wrap spawn in a Promise to properly await completion
     const result = await new Promise<{ success: boolean; message: string }>(
       (resolve, reject) => {
-        const child = spawn(exePath, args, { windowsHide: true });
+        const exePathStr = exePath as string;
+        const child: ChildProcess = spawn(exePathStr, args, {
+          windowsHide: true,
+        });
 
         // Store process for potential cancellation
         // Use output filename as key (unique per capture request)
@@ -143,19 +170,19 @@ export default async function handler(
           child.kill("SIGTERM");
         }, timeoutMs);
 
-        child.stdout?.on("data", (chunk) => {
+        child.stdout?.on("data", (chunk: any) => {
           const data = chunk.toString();
           stdout += data;
           console.log("[SNIFFER]", data.trim());
         });
 
-        child.stderr?.on("data", (chunk) => {
+        child.stderr?.on("data", (chunk: any) => {
           const data = chunk.toString();
           stderr += data;
           console.error("[SNIFFER ERROR]", data.trim());
         });
 
-        child.on("error", (err) => {
+        child.on("error", (err: any) => {
           console.error("[API] Child process error:", err);
           clearTimeout(timeoutHandle);
           removeCapture(output);
@@ -170,7 +197,7 @@ export default async function handler(
           });
         });
 
-        child.on("close", (code) => {
+        child.on("close", (code: number | null) => {
           console.log("[API] Child process closed with code:", code);
           clearTimeout(timeoutHandle);
           removeCapture(output);
@@ -229,8 +256,10 @@ export default async function handler(
     } catch {
       // ignore
     }
-    res
-      .status(500)
-      .json({ success: false, message: err.message || String(err) });
+    const message = err?.message || String(err);
+    const status = message.includes("Select at least one packet type")
+      ? 400
+      : 500;
+    res.status(status).json({ success: false, message });
   }
 }
