@@ -96,6 +96,8 @@ int main(int argc, char *argv[])
 
     std::string output_filename;
     IPVersionFilter ip_filter;
+    bool has_custom_filter = false;
+    std::string custom_filter_expr;
     bool promiscuous_mode = true;
     std::string interface_name;
     int duration_seconds = 0; // 0 = unlimited
@@ -182,8 +184,8 @@ int main(int argc, char *argv[])
             ip_filter = IPVersionFilter::BGP_ONLY;
         else
         {
-            std::cerr << "Error: Invalid filter '" << filter_arg << "'" << std::endl;
-            return 1;
+            has_custom_filter = true;
+            custom_filter_expr = filter_arg;
         }
 
         // duration_seconds already parsed above
@@ -260,19 +262,26 @@ int main(int argc, char *argv[])
     }
 
     CSVMode csv_mode;
-    switch (ip_filter)
+    if (has_custom_filter)
     {
-    case IPVersionFilter::IPv4_ONLY:
-        csv_mode = CSVMode::IPv4_ONLY;
-        break;
-    case IPVersionFilter::IPv6_ONLY:
-        csv_mode = CSVMode::IPv6_ONLY;
-        break;
-    case IPVersionFilter::ALL:
-    case IPVersionFilter::ICMP_ONLY:
-    case IPVersionFilter::BGP_ONLY:
         csv_mode = CSVMode::BOTH;
-        break;
+    }
+    else
+    {
+        switch (ip_filter)
+        {
+        case IPVersionFilter::IPv4_ONLY:
+            csv_mode = CSVMode::IPv4_ONLY;
+            break;
+        case IPVersionFilter::IPv6_ONLY:
+            csv_mode = CSVMode::IPv6_ONLY;
+            break;
+        case IPVersionFilter::ALL:
+        case IPVersionFilter::ICMP_ONLY:
+        case IPVersionFilter::BGP_ONLY:
+            csv_mode = CSVMode::BOTH;
+            break;
+        }
     }
 
     auto capturer = std::make_unique<PacketCapturer>();
@@ -312,10 +321,9 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    std::string filter_string = getIPVersionFilterString(ip_filter);
-    if (!filter_string.empty())
+    if (has_custom_filter)
     {
-        if (!capturer->setFilter(filter_string))
+        if (!capturer->setFilter(custom_filter_expr))
         {
             std::cerr << "Failed to set packet filter: " << capturer->getLastError() << std::endl;
             return 1;
@@ -323,7 +331,19 @@ int main(int argc, char *argv[])
     }
     else
     {
-        std::cout << "No packet filter applied - capturing all packets" << std::endl;
+        std::string filter_string = getIPVersionFilterString(ip_filter);
+        if (!filter_string.empty())
+        {
+            if (!capturer->setFilter(filter_string))
+            {
+                std::cerr << "Failed to set packet filter: " << capturer->getLastError() << std::endl;
+                return 1;
+            }
+        }
+        else
+        {
+            std::cout << "No packet filter applied - capturing all packets" << std::endl;
+        }
     }
 
     uint64_t packet_count = 0;

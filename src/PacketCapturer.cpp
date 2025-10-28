@@ -341,22 +341,64 @@ std::string PacketCapturer::selectFirstActiveInterface()
 
     std::string selected_interface;
 
+    auto is_virtual_desc = [](const char *description) -> bool
+    {
+        if (!description)
+            return false;
+        std::string desc = description;
+        return (desc.find("VMware") != std::string::npos ||
+                desc.find("VirtualBox") != std::string::npos ||
+                desc.find("Hyper-V") != std::string::npos ||
+                desc.find("Virtual") != std::string::npos);
+    };
+
+    auto is_vendor_recommended = [](const char *description) -> bool
+    {
+        if (!description)
+            return false;
+        std::string d = description;
+        for (auto &c : d)
+            c = static_cast<char>(::tolower(c));
+        return (d.find("intel") != std::string::npos ||
+                d.find("realtek") != std::string::npos ||
+                d.find("qualcomm") != std::string::npos ||
+                d.find("atheros") != std::string::npos ||
+                d.find("broadcom") != std::string::npos ||
+                d.find("killer") != std::string::npos ||
+                d.find("marvell") != std::string::npos ||
+                d.find("tp-link") != std::string::npos ||
+                d.find("d-link") != std::string::npos);
+    };
+
+    // Preferred pass: choose recommended vendor first (non-loopback, up, has addresses, non-virtual)
+    for (pcap_if_t *device = all_devices; device != nullptr; device = device->next)
+    {
+        bool is_up = device->flags & PCAP_IF_UP;
+        bool has_addresses = device->addresses != nullptr;
+        bool is_loopback = device->flags & PCAP_IF_LOOPBACK;
+        bool is_virtual = is_virtual_desc(device->description);
+        bool vendor_ok = is_vendor_recommended(device->description);
+
+        if (vendor_ok && is_up && has_addresses && !is_loopback && !is_virtual)
+        {
+            selected_interface = device->name;
+            break;
+        }
+    }
+
+    if (!selected_interface.empty())
+    {
+        pcap_freealldevs(all_devices);
+        return selected_interface;
+    }
+
     // First pass: Look for non-loopback, UP, HAS_ADDRESSES, non-virtual interfaces
     for (pcap_if_t *device = all_devices; device != nullptr; device = device->next)
     {
         bool is_up = device->flags & PCAP_IF_UP;
         bool has_addresses = device->addresses != nullptr;
         bool is_loopback = device->flags & PCAP_IF_LOOPBACK;
-        bool is_virtual = false;
-
-        if (device->description)
-        {
-            std::string desc = device->description;
-            is_virtual = (desc.find("VMware") != std::string::npos ||
-                          desc.find("VirtualBox") != std::string::npos ||
-                          desc.find("Hyper-V") != std::string::npos ||
-                          desc.find("Virtual") != std::string::npos);
-        }
+        bool is_virtual = is_virtual_desc(device->description);
 
         // Prefer physical, active interfaces with IP addresses
         if (is_up && has_addresses && !is_loopback && !is_virtual)

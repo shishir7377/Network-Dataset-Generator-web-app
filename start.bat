@@ -24,22 +24,6 @@ if not exist "web\node_modules\" (
     exit /b 1
 )
 
-REM Check if running as Administrator
-net session >nul 2>&1
-if %errorLevel% neq 0 (
-    echo ========================================
-    echo  ADMINISTRATOR PRIVILEGES REQUIRED
-    echo ========================================
-    echo.
-    echo Packet capture requires Administrator privileges.
-    echo.
-    echo Please:
-    echo   1. Right-click this script
-    echo   2. Select "Run as administrator"
-    echo.
-    pause
-    exit /b 1
-)
 
 echo Backend: build\Release\NetworkPacketAnalyzer.exe [OK]
 echo Frontend: web\node_modules\ [OK]
