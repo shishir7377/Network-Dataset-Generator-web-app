@@ -35,12 +35,12 @@ export default async function handler(
   }
 
   const {
-    output = "packet_capture.csv",
-    iface = "",
-    filter = "both",
+    output = 'packet_capture.csv',
+    iface = '',
+    filter = 'both',
     filters,
     duration = 10,
-    promiscuous = "on",
+    promiscuous = 'on',
   } = req.body;
   console.log("[API] Parsed params:", {
     output,
@@ -52,28 +52,28 @@ export default async function handler(
   });
 
   // Determine repository root and executable candidates
-  const repoRoot = path.resolve(process.cwd(), "..");
-  console.log("[API] Repo root:", repoRoot);
-  console.log("[API] Process cwd:", process.cwd());
+  const repoRoot = path.resolve(process.cwd(), '..');
+  console.log('[API] Repo root:', repoRoot);
+  console.log('[API] Process cwd:', process.cwd());
 
-  const exeBase = "NetworkPacketAnalyzer";
+  const exeBase = 'NetworkPacketAnalyzer';
   const candidates = [
-    path.join(repoRoot, "build", "Release", exeBase + ".exe"),
-    path.join(repoRoot, "build", exeBase + ".exe"),
-    path.join(repoRoot, "build", exeBase),
+    path.join(repoRoot, 'build', 'Release', `${exeBase}.exe`),
+    path.join(repoRoot, 'build', `${exeBase}.exe`),
+    path.join(repoRoot, 'build', exeBase),
   ];
 
-  console.log("[API] Searching for executable in candidates:");
+  console.log('[API] Searching for executable in candidates:');
   candidates.forEach((c) =>
-    console.log("  -", c, fs.existsSync(c) ? "✓" : "✗")
+    console.log('  -', c, fs.existsSync(c) ? '✓' : '✗')
   );
 
   const exePath = candidates.find((p) => fs.existsSync(p));
   if (!exePath) {
-    console.log("[API] ERROR: Executable not found in any candidate path");
+    console.log('[API] ERROR: Executable not found in any candidate path');
     res.status(500).json({
       success: false,
-      message: "Sniffer executable not found. Build the C++ project first.",
+      message: 'Sniffer executable not found. Build the C++ project first.',
     });
     return;
   }

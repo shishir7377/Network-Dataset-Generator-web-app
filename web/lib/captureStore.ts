@@ -29,8 +29,8 @@ function readRegistry(): RegistryRecord[] {
       const data = JSON.parse(raw);
       if (Array.isArray(data)) return data as RegistryRecord[];
     }
-  } catch {
-    // ignore
+  } catch (error) {
+    console.error('[captureStore] Error reading registry:', error);
   }
   return [];
 }
@@ -39,8 +39,8 @@ function writeRegistry(records: RegistryRecord[]) {
   try {
     ensurePublicDir();
     fs.writeFileSync(registryPath, JSON.stringify(records, null, 2), "utf8");
-  } catch {
-    // ignore
+  } catch (error) {
+    console.error('[captureStore] Error writing registry:', error);
   }
 }
 
@@ -54,8 +54,8 @@ export function registerCapture(
   if (existing && !existing.child.killed) {
     try {
       existing.child.kill();
-    } catch {
-      // ignore
+    } catch (error) {
+      console.error('[captureStore] Error killing existing capture:', error);
     }
   }
   activeCaptures.set(key, { child, stopFile });
@@ -80,7 +80,8 @@ function forceKill(key: string): boolean {
   try {
     child.kill();
     return true;
-  } catch {
+  } catch (error) {
+    console.error('[captureStore] Error force killing process:', error);
     return false;
   } finally {
     activeCaptures.delete(key);
@@ -103,7 +104,8 @@ export function signalStop(key: string): boolean {
     ensurePublicDir();
     fs.writeFileSync(stopPath, Date.now().toString(), "utf8");
     return true;
-  } catch {
+  } catch (error) {
+    console.error('[captureStore] Error writing stop signal file:', error);
     return false;
   }
 }
@@ -122,7 +124,8 @@ export function stopByKeyWithFallback(key: string): boolean {
       const next = recs.filter((r) => r.key !== key);
       writeRegistry(next);
       return true;
-    } catch {
+    } catch (error) {
+      console.error('[captureStore] Error killing process by PID:', error);
       return false;
     }
   }

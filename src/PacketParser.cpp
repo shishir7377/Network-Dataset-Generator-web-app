@@ -11,7 +11,10 @@
 #include <arpa/inet.h>
 #endif
 
-using namespace std;
+using std::string;
+using std::optional;
+using std::nullopt;
+using std::ostringstream;
 
 PacketParser::PacketParser() {}
 
@@ -24,8 +27,8 @@ optional<PacketFeature> PacketParser::processPacket(const uint8_t *packet, int p
         return nullopt;
     }
 
-    auto timestamp = chrono::system_clock::from_time_t(header->ts.tv_sec) +
-                     chrono::microseconds(header->ts.tv_usec);
+    const auto timestamp = std::chrono::system_clock::from_time_t(header->ts.tv_sec) +
+                     std::chrono::microseconds(header->ts.tv_usec);
 
     const uint8_t *ip_header = packet + ETHERNET_HEADER_SIZE;
     int remaining_size = packet_size - ETHERNET_HEADER_SIZE;
@@ -39,7 +42,7 @@ optional<PacketFeature> PacketParser::processPacket(const uint8_t *packet, int p
 
     if (version == 4)
     {
-        auto ipv4_feature = parseIPv4(ip_header, remaining_size, timestamp);
+        const auto ipv4_feature = parseIPv4(ip_header, remaining_size, timestamp);
         if (ipv4_feature)
         {
             PacketFeature feature(PacketFeature::Type::IPv4);
@@ -49,7 +52,7 @@ optional<PacketFeature> PacketParser::processPacket(const uint8_t *packet, int p
     }
     else if (version == 6)
     {
-        auto ipv6_feature = parseIPv6(ip_header, remaining_size, timestamp);
+        const auto ipv6_feature = parseIPv6(ip_header, remaining_size, timestamp);
         if (ipv6_feature)
         {
             PacketFeature feature(PacketFeature::Type::IPv6);
@@ -60,7 +63,7 @@ optional<PacketFeature> PacketParser::processPacket(const uint8_t *packet, int p
     return nullopt;
 }
 
-optional<IPv4PacketFeature> PacketParser::parseIPv4(const uint8_t *ip_header, int remaining_size, chrono::system_clock::time_point timestamp)
+optional<IPv4PacketFeature> PacketParser::parseIPv4(const uint8_t *ip_header, int remaining_size, std::chrono::system_clock::time_point timestamp)
 {
     if (remaining_size < IPV4_MIN_HEADER_SIZE)
     {
@@ -73,36 +76,50 @@ optional<IPv4PacketFeature> PacketParser::parseIPv4(const uint8_t *ip_header, in
     feature.version = (ip_header[0] >> 4) & 0x0F;
     feature.ihl = ip_header[0] & 0x0F;
     feature.tos = ip_header[1];
-    feature.total_length = ntohs(*reinterpret_cast<const uint16_t *>(&ip_header[2]));
-    feature.identification = ntohs(*reinterpret_cast<const uint16_t *>(&ip_header[4]));
+    
+    // Use memcpy to avoid alignment issues, then convert to host byte order
+    uint16_t total_length_network;
+    std::memcpy(&total_length_network, &ip_header[2], sizeof(uint16_t));
+    feature.total_length = ntohs(total_length_network);
+    
+    uint16_t identification_network;
+    std::memcpy(&identification_network, &ip_header[4], sizeof(uint16_t));
+    feature.identification = ntohs(identification_network);
 
-    uint16_t flags_and_fragment = ntohs(*reinterpret_cast<const uint16_t *>(&ip_header[6]));
+    uint16_t flags_and_fragment_network;
+    std::memcpy(&flags_and_fragment_network, &ip_header[6], sizeof(uint16_t));
+    const uint16_t flags_and_fragment = ntohs(flags_and_fragment_network);
     feature.flags = (flags_and_fragment >> 13) & 0x07;
     feature.fragment_offset = flags_and_fragment & 0x1FFF;
 
     feature.ttl = ip_header[8];
     feature.protocol = ip_header[9];
-    feature.header_checksum = ntohs(*reinterpret_cast<const uint16_t *>(&ip_header[10]));
+    
+    uint16_t header_checksum_network;
+    std::memcpy(&header_checksum_network, &ip_header[10], sizeof(uint16_t));
+    feature.header_checksum = ntohs(header_checksum_network);
 
     feature.protocol_name = getProtocolName(feature.protocol);
 
-    uint32_t src_ip = *reinterpret_cast<const uint32_t *>(&ip_header[12]);
-    uint32_t dst_ip = *reinterpret_cast<const uint32_t *>(&ip_header[16]);
+    uint32_t src_ip;
+    std::memcpy(&src_ip, &ip_header[12], sizeof(uint32_t));
+    uint32_t dst_ip;
+    std::memcpy(&dst_ip, &ip_header[16], sizeof(uint32_t));
     feature.src_address = ipv4ToString(src_ip);
     feature.dst_address = ipv4ToString(dst_ip);
 
-    int header_length = feature.ihl * 4;
+    const int header_length = feature.ihl * 4;
     if (header_length > IPV4_MIN_HEADER_SIZE && header_length <= remaining_size)
     {
-        int options_length = header_length - IPV4_MIN_HEADER_SIZE;
+        const int options_length = header_length - IPV4_MIN_HEADER_SIZE;
         feature.options.resize(options_length);
-        memcpy(feature.options.data(), &ip_header[IPV4_MIN_HEADER_SIZE], options_length);
+        std::memcpy(feature.options.data(), &ip_header[IPV4_MIN_HEADER_SIZE], options_length);
     }
 
     return feature;
 }
 
-optional<IPv6PacketFeature> PacketParser::parseIPv6(const uint8_t *ip_header, int remaining_size, chrono::system_clock::time_point timestamp)
+optional<IPv6PacketFeature> PacketParser::parseIPv6(const uint8_t *ip_header, int remaining_size, std::chrono::system_clock::time_point timestamp)
 {
     if (remaining_size < IPV6_HEADER_SIZE)
     {
@@ -112,12 +129,16 @@ optional<IPv6PacketFeature> PacketParser::parseIPv6(const uint8_t *ip_header, in
     IPv6PacketFeature feature;
     feature.timestamp = timestamp;
 
-    uint32_t version_tc_fl = ntohl(*reinterpret_cast<const uint32_t *>(ip_header));
+    uint32_t version_tc_fl_network;
+    std::memcpy(&version_tc_fl_network, ip_header, sizeof(uint32_t));
+    const uint32_t version_tc_fl = ntohl(version_tc_fl_network);
     feature.version = (version_tc_fl >> 28) & 0x0F;
     feature.traffic_class = (version_tc_fl >> 20) & 0xFF;
     feature.flow_label = version_tc_fl & 0x0FFFFF;
 
-    feature.payload_length = ntohs(*reinterpret_cast<const uint16_t *>(&ip_header[4]));
+    uint16_t payload_length_network;
+    std::memcpy(&payload_length_network, &ip_header[4], sizeof(uint16_t));
+    feature.payload_length = ntohs(payload_length_network);
     feature.next_header = ip_header[6];
     feature.hop_limit = ip_header[7];
 
@@ -128,7 +149,7 @@ optional<IPv6PacketFeature> PacketParser::parseIPv6(const uint8_t *ip_header, in
 
     if (remaining_size > IPV6_HEADER_SIZE)
     {
-        string ext_headers = parseIPv6ExtensionHeaders(&ip_header[IPV6_HEADER_SIZE],
+        const string ext_headers = parseIPv6ExtensionHeaders(&ip_header[IPV6_HEADER_SIZE],
                                                        remaining_size - IPV6_HEADER_SIZE,
                                                        final_protocol);
         if (!ext_headers.empty())
@@ -153,7 +174,7 @@ string PacketParser::ipv6ToString(const uint8_t *ip)
 {
     char str[INET6_ADDRSTRLEN];
     struct in6_addr addr;
-    memcpy(&addr, ip, 16);
+    std::memcpy(&addr, ip, 16);
 
 #ifdef _WIN32
     if (inet_ntop(AF_INET6, &addr, str, INET6_ADDRSTRLEN) != nullptr)
@@ -172,7 +193,7 @@ string PacketParser::ipv6ToString(const uint8_t *ip)
     {
         if (i > 0)
             oss << ":";
-        oss << hex << setfill('0') << setw(4)
+        oss << std::hex << std::setfill('0') << std::setw(4)
             << (static_cast<uint16_t>(ip[i]) << 8 | ip[i + 1]);
     }
     return oss.str();
@@ -183,7 +204,7 @@ string PacketParser::bytesToHex(const uint8_t *data, size_t length)
     ostringstream oss;
     for (size_t i = 0; i < length; ++i)
     {
-        oss << hex << setfill('0') << setw(2) << static_cast<unsigned>(data[i]);
+        oss << std::hex << std::setfill('0') << std::setw(2) << static_cast<unsigned>(data[i]);
     }
     return oss.str();
 }
@@ -240,7 +261,7 @@ string PacketParser::parseIPv6ExtensionHeaders(const uint8_t *data, int remainin
     return oss.str();
 }
 
-string PacketParser::getProtocolName(uint8_t protocol_number)
+string PacketParser::getProtocolName(const uint8_t protocol_number)
 {
     switch (protocol_number)
     {
@@ -267,6 +288,6 @@ string PacketParser::getProtocolName(uint8_t protocol_number)
     case 132:
         return "SCTP";
     default:
-        return "PROTO_" + to_string(protocol_number);
+        return "PROTO_" + std::to_string(protocol_number);
     }
 }
