@@ -27,7 +27,6 @@ if not exist "web\node_modules\" (
 
 echo Backend: build\Release\NetworkPacketAnalyzer.exe [OK]
 echo Frontend: web\node_modules\ [OK]
-echo Privileges: Administrator [OK]
 echo.
 echo Starting development server...
 echo Open http://localhost:3000 in your browser

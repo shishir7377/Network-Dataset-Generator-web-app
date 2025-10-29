@@ -453,7 +453,6 @@ void PacketCapturer::listInterfacesJSON() const
         return;
     }
 
-    // Helper lambda to escape strings for JSON
     auto escapeJSON = [](const std::string &str) -> std::string
     {
         std::string escaped;

@@ -188,8 +188,6 @@ int main(int argc, char *argv[])
             custom_filter_expr = filter_arg;
         }
 
-        // duration_seconds already parsed above
-
         if (argc >= 6)
         {
             std::string promisc_arg = argv[5];
@@ -204,7 +202,6 @@ int main(int argc, char *argv[])
             stop_signal_file = argv[6];
         }
     }
-    // Note: Legacy format parsing already handled above in lines 119-155
 
     if (use_interactive)
     {
@@ -351,8 +348,6 @@ int main(int argc, char *argv[])
     uint64_t dropped_count = 0;
     auto start_time = std::chrono::steady_clock::now();
 
-    // If a finite duration is requested, also start a timer thread that will
-    // break the pcap loop even if no packets arrive (important on idle links).
     std::thread timer_thread;
     if (duration_seconds > 0)
     {
@@ -360,10 +355,9 @@ int main(int argc, char *argv[])
         timer_thread = std::thread([capturer_ptr, &start_time, duration_seconds]()
                                    {
             using namespace std::chrono;
-            // Sleep until duration elapses; use steady_clock for monotonic timing
+            // Sleep until duration elapses; 
             auto target = steady_clock::now() + seconds(duration_seconds);
             std::this_thread::sleep_until(target);
-            // Signal stop and break the loop from another thread
             keep_running = false;
             if (capturer_ptr)
             {
@@ -397,14 +391,11 @@ int main(int argc, char *argv[])
 
     capturer->setCallback([&](const uint8_t *packet, int size, const struct pcap_pkthdr *header)
                           {
-        // Check duration timeout
         if (duration_seconds > 0) {
             auto elapsed = std::chrono::steady_clock::now() - start_time;
             auto elapsed_sec = std::chrono::duration_cast<std::chrono::seconds>(elapsed).count();
             if (elapsed_sec >= duration_seconds) {
                 keep_running = false;
-                // Also explicitly break the pcap loop to stop immediately
-                // even under continuous traffic.
                 if (capturer)
                 {
                     capturer->stopCapture();
@@ -474,7 +465,6 @@ int main(int argc, char *argv[])
     if (!capturer->startCapture())
     {
         std::cerr << "Failed to start capture: " << capturer->getLastError() << std::endl;
-        // Join timer thread if it was started
         if (timer_thread.joinable())
         {
             timer_thread.join();
@@ -489,14 +479,12 @@ int main(int argc, char *argv[])
     bool interrupted = !keep_running.load();
     keep_running = false;
 
-    // Wait a moment for cleanup after Ctrl+C
     if (interrupted)
     {
         std::cout << "Exiting..." << std::endl;
         std::this_thread::sleep_for(std::chrono::seconds(1));
     }
 
-    // Join the timer thread if it was started
     if (timer_thread.joinable())
     {
         timer_thread.join();
